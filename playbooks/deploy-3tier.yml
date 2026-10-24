@@ -1,0 +1,268 @@
+---
+# ==========================================
+# 1. DB サーバー (dbservers) の設定
+# ==========================================
+- name: Configure DB Server (PostgreSQL)
+  hosts: dbservers
+  become: true
+  tasks:
+    - name: PostgreSQL のインストール
+      ansible.builtin.apt:
+        name:
+          - postgresql
+          - postgresql-contrib
+          - python3-psycopg2
+        state: present
+        update_cache: yes
+
+    - name: PostgreSQL 外部接続の許可 (postgresql.conf)
+      ansible.builtin.lineinfile:
+        path: /etc/postgresql/14/main/postgresql.conf
+        regexp: "^#?listen_addresses\\s*="
+        line: "listen_addresses = '*'"
+      notify: Restart PostgreSQL
+
+    - name: App サーバーからの接続許可 (pg_hba.conf)
+      ansible.builtin.lineinfile:
+        path: /etc/postgresql/14/main/pg_hba.conf
+        line: "host all all 192.168.33.0/24 md5"
+      notify: Restart PostgreSQL
+
+    - name: データベースの作成
+      community.postgresql.postgresql_db:
+        name: mezzanine
+        state: present
+      become_user: postgres
+
+    - name: データベースユーザーの作成
+      community.postgresql.postgresql_user:
+        name: mezzanine
+        password: mezzanine_password
+        state: present
+      become_user: postgres
+
+    - name: データベースへの権限付与
+      community.postgresql.postgresql_privs:
+        login_db: mezzanine
+        db: mezzanine
+        role: mezzanine
+        objs: ALL_IN_SCHEMA
+        privs: ALL
+        state: present
+      become_user: postgres
+
+  handlers:
+    - name: Restart PostgreSQL
+      ansible.builtin.systemd:
+        name: postgresql
+        state: restarted
+
+# ==========================================
+# 2. App サーバー (appservers) の設定
+# ==========================================
+- name: Configure App Server (Mezzanine & Gunicorn)
+  hosts: appservers
+  become: true
+  tasks:
+    - name: 依存パッケージのインストール
+      ansible.builtin.apt:
+        name:
+          - python3-venv
+          - python3-dev
+          - libpq-dev
+          - build-essential
+        state: present
+        update_cache: yes
+
+    - name: アプリケーションディレクトリの作成
+      ansible.builtin.file:
+        path: /var/www/mezzanine_proj
+        state: directory
+        owner: vagrant
+        group: vagrant
+        mode: '0755'
+
+    - name: Virtualenv の作成とパッケージインストール
+      ansible.builtin.pip:
+        name:
+          - mezzanine
+          - gunicorn
+          - psycopg2-binary
+        virtualenv: /var/www/mezzanine_proj/venv
+      become: false
+
+    - name: Mezzanine プロジェクトの生成
+      ansible.builtin.shell: |
+        cd /var/www/mezzanine_proj
+        . venv/bin/activate
+        if [ ! -f manage.py ]; then
+          mkdir -p tmp_build
+          mezzanine-project mezzanine_proj tmp_build
+          (cd tmp_build && tar cf - .) | tar xf -
+          rm -rf tmp_build
+        fi
+      become: false
+
+    - name: local_settings.py の配置 (DB接続 & ALLOWED_HOSTS 設定)
+      ansible.builtin.blockinfile:
+        path: /var/www/mezzanine_proj/mezzanine_proj/local_settings.py
+        create: yes
+        block: |
+          DATABASES = {
+              "default": {
+                  "ENGINE": "django.db.backends.postgresql",
+                  "NAME": "mezzanine",
+                  "USER": "mezzanine",
+                  "PASSWORD": "mezzanine_password",
+                  "HOST": "192.168.33.13",
+                  "PORT": "5432",
+              }
+          }
+          ALLOWED_HOSTS = ["*"]
+      become: false
+
+    - name: データベースマイグレーションの実行
+      ansible.builtin.shell:
+        cmd: cd /var/www/mezzanine_proj && . venv/bin/activate && python manage.py migrate --noinput
+      become: false
+
+    - name: 静的ファイル (collectstatic) の集約
+      ansible.builtin.shell:
+        cmd: cd /var/www/mezzanine_proj && . venv/bin/activate && python manage.py collectstatic --noinput
+      become: false
+
+    - name: Gunicorn systemd サービスファイルの作成
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/gunicorn.service
+        content: |
+          [Unit]
+          Description=Gunicorn daemon for Django/Mezzanine
+          After=network.target
+
+          [Service]
+          User=vagrant
+          Group=vagrant
+          WorkingDirectory=/var/www/mezzanine_proj
+          ExecStart=/var/www/mezzanine_proj/venv/bin/gunicorn --workers 3 --bind 0.0.0.0:8000 mezzanine_proj.wsgi:application
+
+          [Install]
+          WantedBy=multi-user.target
+      notify: Restart Gunicorn
+
+  handlers:
+    - name: Restart Gunicorn
+      ansible.builtin.systemd:
+        name: gunicorn
+        state: restarted
+        daemon_reload: yes
+        enabled: yes
+
+# ==========================================
+# 3. Web サーバー (webservers) の SSL/HTTPS 設定
+# ==========================================
+- name: Configure Web Server (Nginx with SSL/TLS)
+  hosts: webservers
+  become: true
+  tasks:
+    - name: Nginx および証明書生成に必要なパッケージのインストール
+      ansible.builtin.apt:
+        name:
+          - nginx
+          - python3-cryptography
+        state: present
+        update_cache: yes
+
+    - name: SSL 証明書格納用ディレクトリの作成
+      ansible.builtin.file:
+        path: /etc/nginx/ssl
+        state: directory
+        owner: root
+        group: root
+        mode: '0700'
+
+    - name: 秘密鍵 (Private Key) の生成
+      community.crypto.openssl_privatekey:
+        path: /etc/nginx/ssl/nginx-selfsigned.key
+        size: 2048
+        type: RSA
+        mode: '0600'
+
+    - name: CSR (証明書署名要求) の生成
+      community.crypto.openssl_csr:
+        path: /etc/nginx/ssl/nginx-selfsigned.csr
+        privatekey_path: /etc/nginx/ssl/nginx-selfsigned.key
+        common_name: "192.168.33.11"
+
+    - name: 自己署名 SSL 証明書 (X.509) の発行
+      community.crypto.x509_certificate:
+        path: /etc/nginx/ssl/nginx-selfsigned.crt
+        privatekey_path: /etc/nginx/ssl/nginx-selfsigned.key
+        csr_path: /etc/nginx/ssl/nginx-selfsigned.csr
+        provider: selfsigned
+        selfsigned_not_after: "+365d"
+
+    - name: SSL 対応 Nginx 仮想ホスト設定ファイルの配置
+      ansible.builtin.copy:
+        dest: /etc/nginx/sites-available/mezzanine
+        content: |
+          # HTTP から HTTPS へのリダイレクト設定
+          server {
+              listen 80;
+              server_name _;
+              return 301 https://$host$request_uri;
+          }
+
+          # HTTPS (443) サーバー設定
+          server {
+              listen 443 ssl;
+              server_name _;
+
+              ssl_certificate /etc/nginx/ssl/nginx-selfsigned.crt;
+              ssl_certificate_key /etc/nginx/ssl/nginx-selfsigned.key;
+
+              # SSL セキュリティ推奨プロトコル
+              ssl_protocols TLSv1.2 TLSv1.3;
+              ssl_ciphers HIGH:!aNULL:!MD5;
+
+              location /static/ {
+                  alias /var/www/mezzanine_proj/static/;
+              }
+
+              location / {
+                  proxy_pass http://192.168.33.12:8000;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+              }
+          }
+      notify: Reload Nginx
+
+    - name: 仮想ホスト設定の有効化 (シンボリックリンク作成)
+      ansible.builtin.file:
+        src: /etc/nginx/sites-available/mezzanine
+        dest: /etc/nginx/sites-enabled/mezzanine
+        state: link
+      notify: Reload Nginx
+
+    - name: デフォルトサイト設定の無効化
+      ansible.builtin.file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+      notify: Reload Nginx
+
+    - name: UFW ファイアウォールで 80 番および 443 番ポートの許可
+      ansible.builtin.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - '80'
+        - '443'
+
+  handlers:
+    - name: Reload Nginx
+      ansible.builtin.systemd:
+        name: nginx
+        state: reloaded
+        enabled: yes

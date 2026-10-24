@@ -1,0 +1,36 @@
+from __future__ import unicode_literals
+
+# 💡 Ansibleのvarsから動的に秘密鍵を埋め込みます
+SECRET_KEY = "{{ secret_key }}"
+NEVERCACHE_KEY = "{{ nevercache_key }}"
+
+# 💡 Appサーバー自身のプライベートIPとlocalhostからのアクセスを許可します
+ALLOWED_HOSTS = ["127.0.0.1", "localhost", "{{ ansible_host }}"]
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql_psycopg2",
+        "NAME": "{{ proj_name }}",
+        "USER": "{{ proj_name }}",
+        "PASSWORD": "{{ db_pass }}",
+        # 💡 ここを同一マシン(127.0.0.1)ではなく、DBサーバー(vagrant3)のIPに指定！
+        "HOST": "192.168.33.13",
+        "PORT": "5432",
+    }
+}
+
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTOCOL", "https")
+
+CACHE_MIDDLEWARE_SECONDS = 60
+
+CACHE_MIDDLEWARE_KEY_PREFIX = "{{ proj_name }}"
+
+# 💡 キャッシュサーバー(Memcached)はAppサーバー自身(ローカル)のものを使用します
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.memcached.MemcachedCache",
+        "LOCATION": "127.0.0.1:11211",
+    }
+}
+
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"

@@ -1,0 +1,62 @@
+- name: Configure webserver with nginx and tls
+  hosts: webservers        # 💡「host」を「hosts」に修正し、先ほど成功した「testserver」に統一
+  become: true
+  vars:
+    key_file: /etc/nginx/ssl/nginx.key
+    cert_file: /etc/nginx/ssl/nginx.crt   # 💡「ssh」になっていたタイポを「ssl」に修正
+    conf_file: /etc/nginx/sites-available/default
+    server_name: localhost
+  
+  tasks:
+    - name: Ensure SSL directory exists
+      file:
+        path: /etc/nginx/ssl
+        state: directory
+        owner: root
+        mode: '0755'
+      # 💡TLSの鍵を配置する前に、受け皿となる /etc/nginx/ssl フォルダを作成するタスクを追加しました
+
+    - name: Install nginx
+      apt:
+        name: nginx
+        update_cache: yes
+        cache_valid_time: 3600  # 💡「cache_varid_time」のタイポを修正
+
+    - name: Copy TLS key
+      copy:
+        src: files/nginx.key
+        dest: "{{ key_file }}"    # 💡変数展開のパースエラーを防ぐため全体をダブルクォーテーションで囲みます
+        owner: root
+        mode: '0600'
+      notify: Restart nginx
+
+    - name: Copy TLS certificate
+      copy:
+        src: files/nginx.crt
+        dest: "{{ cert_file }}"  # 💡ダブルクォーテーションで囲みます
+      notify: Restart nginx
+
+    - name: Copy nginx config file
+      template:
+        src: templates/nginx.conf.j2  # 💡拡張子が「.js」になっていたタイポを「.j2」に修正
+        dest: "{{ conf_file }}"
+      notify: Restart nginx
+
+    - name: Enable configuration
+      file:
+        src: "{{ conf_file }}"
+        dest: /etc/nginx/sites-enabled/default
+        state: link
+      notify: Restart nginx
+    
+    - name: Copy index.html
+      template:
+        src: templates/index.html.j2
+        dest: /usr/share/nginx/html/index.html
+        mode: '0644'                  # 💡インデントの位置を修正し、8進数エラー防止のクォーテーションを追加
+
+  handlers:                           # 💡「haddlers」のタイポを「handlers」に修正
+    - name: Restart nginx             # 💡タスク内の「notify」の文字と大文字小文字を含めて完全に一致させます
+      service:
+        name: nginx
+        state: restarted

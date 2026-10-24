@@ -1,0 +1,14 @@
+plugin: amazon.aws.aws_ec2
+regions:
+  - ap-northeast-3
+filters:
+  instance-state-name: running
+keyed_groups:
+  - key: tags.Name
+    prefix: tag_Name
+  - key: placement.availability_zone
+    prefix: zone
+hostnames:
+  - ip-address
+  - private-ip-address
+  - dns-name
