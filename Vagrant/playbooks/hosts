@@ -1,0 +1,13 @@
+[dbservers]
+vagrant1 ansible_host=127.0.0.1 ansible_port=2221 ansible_user=vagrant ansible_ssh_private_key_file=/home/yudna/.ssh/vagrant1_key
+
+[appservers]
+vagrant2 ansible_host=127.0.0.1 ansible_port=2222 ansible_user=vagrant ansible_ssh_private_key_file=/home/yudna/.ssh/vagrant2_key
+
+[webservers]
+vagrant3 ansible_host=127.0.0.1 ansible_port=2223 ansible_user=vagrant ansible_ssh_private_key_file=/home/yudna/.ssh/vagrant3_key
+
+[all:vars]
+ansible_user=vagrant
+ansible_python_interpreter=/usr/bin/python3
+ansible_ssh_common_args='-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'

@@ -1,0 +1,55 @@
+services:
+
+  db:
+    image: postgres:16
+    container_name: wagtail-db
+
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: wagtail
+      POSTGRES_USER: wagtail
+      POSTGRES_PASSWORD: wagtailpass
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  web:
+   build:
+     context: ./wagtail/project/mysite
+
+   container_name: wagtail-web
+
+   restart: unless-stopped
+
+   depends_on:
+     - db
+
+   environment:
+     DATABASE_NAME: wagtail
+     DATABASE_USER: wagtail
+     DATABASE_PASSWORD: wagtailpass
+     DATABASE_HOST: db
+     DATABASE_PORT: 5432
+
+   expose:
+      - "8000"
+
+  nginx:
+    image: nginx:stable
+
+    container_name: wagtail-nginx
+
+    restart: unless-stopped
+
+    depends_on:
+      - web
+
+    ports:
+      - "80:80"
+
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+
+volumes:
+  postgres_data:

@@ -1,0 +1,33 @@
+Host vagrant1
+  HostName 127.0.0.1
+  User vagrant
+  Port 2221
+  IdentityFile /home/yudna/.ssh/vagrant1_key
+  UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no
+  PasswordAuthentication no
+  IdentitiesOnly yes
+  LogLevel FATAL
+
+Host vagrant2
+  HostName 127.0.0.1
+  User vagrant
+  Port 2222
+  IdentityFile /home/yudna/.ssh/vagrant2_key
+  UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no
+  PasswordAuthentication no
+  IdentitiesOnly yes
+  LogLevel FATAL
+
+Host vagrant3
+  HostName 127.0.0.1
+  User vagrant
+  Port 2223
+  IdentityFile /home/yudna/.ssh/vagrant3_key
+  UserKnownHostsFile /dev/null
+  StrictHostKeyChecking no
+  PasswordAuthentication no
+  IdentitiesOnly yes
+  LogLevel FATAL
+  

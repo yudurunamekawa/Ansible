@@ -1,6 +1,0 @@
-[defaults]
-inventory = ./hosts
-hostfile = inventory
-remote_user = vagrant
-private_key_file = ~/.ssh/vagrant_insecure
-host_key_checking = False

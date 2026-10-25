@@ -1,0 +1,109 @@
+---
+- name: Launch EC2 instances
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    region: ap-northeast-1
+    instance_type: t3.micro
+    instance_count: 2
+    key_name: ansible-key
+
+  tasks:
+
+    - name: Create Web Security Group
+      amazon.aws.ec2_security_group:
+        name: web
+        description: allow http and https access
+        region: "{{ region }}"
+        rules:
+          - proto: tcp
+            ports:
+              - 80
+            cidr_ip: 0.0.0.0/0
+
+          - proto: tcp
+            ports:
+              - 443
+            cidr_ip: 0.0.0.0/0
+
+    - name: Create SSH Security Group
+      amazon.aws.ec2_security_group:
+        name: ssh
+        description: allow ssh access
+        region: "{{ region }}"
+        rules:
+          - proto: tcp
+            ports:
+              - 22
+            cidr_ip: 0.0.0.0/0
+
+    - name: Find Amazon Linux 2023 AMI
+      amazon.aws.ec2_ami_info:
+        region: "{{ region }}"
+        owners:
+          - amazon
+        filters:
+          name: "al2023-ami-*x86_64"
+          state: available
+      register: ami_info
+
+    - name: Launch EC2 Instances
+      amazon.aws.ec2_instance:
+        name: ansiblebook
+        region: "{{ region }}"
+        image_id: "{{ ami_info.images | sort(attribute='creation_date') | last | json_query('image_id') }}"
+        instance_type: "{{ instance_type }}"
+        key_name: "{{ key_name }}"
+        security_groups:
+          - web
+          - ssh
+        count: "{{ instance_count }}"
+        wait: true
+        tags:
+          Name: ansiblebook
+          Environment: production
+          Type: web
+      register: ec2_result
+
+    - name: Display created instances
+      debug:
+        var: ec2_result.instances
+
+    - name: Add hosts to inventory
+      add_host:
+        hostname: "{{ item.public_dns_name }}"
+        groups: web,production
+        ansible_user: ec2-user
+        ansible_ssh_private_key_file: ~/.ssh/ansible-key.pem
+      loop: "{{ ec2_result.instances }}"
+
+    - name: Wait for SSH
+      wait_for:
+        host: "{{ item.public_dns_name }}"
+        port: 22
+        timeout: 300
+      loop: "{{ ec2_result.instances }}"
+
+- name: Configure web servers
+  hosts: web:&production
+  become: true
+
+  tasks:
+
+    - name: Update packages
+      dnf:
+        name: "*"
+        state: latest
+
+    - name: Install nginx
+      dnf:
+        name: nginx
+        state: present
+
+    - name: Start nginx
+      service:
+        name: nginx
+        state: started
+        enabled: true

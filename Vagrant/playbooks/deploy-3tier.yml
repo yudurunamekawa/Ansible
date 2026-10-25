@@ -28,6 +28,10 @@
         line: "host all all 192.168.33.0/24 md5"
       notify: Restart PostgreSQL
 
+    # ★ ここで即座にハンドラー（PostgreSQL再起動）を強制実行して設定を反映させる
+    - name: 設定を即時反映させるための再起動フラッシュ
+      meta: flush_handlers
+
     - name: データベースの作成
       community.postgresql.postgresql_db:
         name: mezzanine
@@ -64,10 +68,12 @@
   hosts: appservers
   become: true
   tasks:
+
     - name: 依存パッケージのインストール
       ansible.builtin.apt:
         name:
           - python3-venv
+          - python3-virtualenv
           - python3-dev
           - libpq-dev
           - build-essential
@@ -114,7 +120,7 @@
                   "NAME": "mezzanine",
                   "USER": "mezzanine",
                   "PASSWORD": "mezzanine_password",
-                  "HOST": "192.168.33.13",
+                  "HOST": "192.168.33.11",
                   "PORT": "5432",
               }
           }

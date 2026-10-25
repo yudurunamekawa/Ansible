@@ -1,0 +1,39 @@
+plugin: amazon.aws.aws_ec2
+
+# 1. 対象のリージョンを指定
+regions:
+  - ap-northeast-1  # 東京リージョン（必要に応じて変更してください）
+
+# 2. 条件による絞り込み（Filters）
+filters:
+  # 起動中（running）のインスタンスのみを取得する設定
+  instance-state-name:
+    - running
+  
+  # 特定のタグで絞り込む場合（例: Environment タグが dev のものだけ）
+  # tag:Environment:
+  #   - dev
+
+# 3. 接続時のIPアドレスの選択
+# デフォルトではパブリックIPが優先されますが、VPC内やVPN接続でプライベートIPを使いたい場合に指定します
+strict_permissions: False
+# compose:
+#   ansible_host: private_ip_address  # プライベートIPで接続したい場合はコメントアウトを解除
+
+# 4. タグや属性に基づいて自動的にグループを作成（Keyed Groups）
+keyed_groups:
+  # タグの「Name」の値でグループ化 (例: aws_ec2_tag_Name_web_server)
+  - key: tags.Name
+    prefix: tag_Name
+  
+  # タグの「Environment」の値でグループ化 (例: aws_ec2_tag_Environment_prod)
+  - key: tags.Environment
+    prefix: tag_Env
+
+  # インスタンスタイプでグループ化 (例: aws_ec2_instance_type_t3_micro)
+  - key: instance_type
+    prefix: instance_type
+
+compose:
+  ansible_user: "'ec2-user'"  # ※Ubuntuの場合は 'ubuntu' に変更してください
+  ansible_ssh_private_key_file: "'/home/yudna/.ssh/ansible-key.pem'"  # お手元の秘密鍵のパスに書き換えてください

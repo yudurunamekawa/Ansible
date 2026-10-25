@@ -1,0 +1,14 @@
+---
+- name: Deploy Wagtail
+  hosts: localhost
+  connection: local
+
+  collections:
+    - community.docker
+
+  tasks:
+
+    - name: Start containers
+      community.docker.docker_compose_v2:
+        project_src: "{{ playbook_dir }}/.."
+        state: present
